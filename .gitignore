@@ -1,0 +1,19 @@
+### Ignore the following ###
+
+# cloned repos
+experimenter-cicd/
+gateway/
+portal/
+
+# configuration
+.env
+config/
+
+# data store
+data/
+
+# misc
+.idea/
+
+# secrets
+README.secret.md

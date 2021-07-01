@@ -1,0 +1,109 @@
+version: '3.8'
+services:
+
+  database:
+    image: postgres:13
+    container_name: aerpaw-db
+    networks:
+      - portal-net
+    volumes:
+      - ${LOCAL_DB_DATA}:${PGDATA}
+      - ${LOCAL_LOGS}/postgres:${POSTGRES_INITDB_WALDIR}
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGDATA=${PGDATA}
+      - POSTGRES_INITDB_WALDIR=${POSTGRES_INITDB_WALDIR}
+
+  django:
+    build:
+      context: ./${PORTAL_REPO}
+      dockerfile: Dockerfile
+    image: django
+    container_name: aerpaw-portal
+    networks:
+      - portal-net
+    volumes:
+      - ./${PORTAL_REPO}:/code
+      - ${LOCAL_DJANGO_STATIC}:/code/static
+      - ${LOCAL_DJANGO_MEDIA}:/code/media
+    environment:
+      - UWSGI_UID=${UWSGI_UID}
+      - UWSGI_GID=${UWSGI_GID}
+
+  nginx:
+    image: nginx:1
+    container_name: aerpaw-nginx
+    ports:
+      - ${NGINX_HTTP_PORT}:80
+      - ${NGINX_HTTPS_PORT}:443
+    networks:
+      - portal-net
+    volumes:
+      - ./${PORTAL_REPO}:/code
+      - ${LOCAL_DJANGO_STATIC}:/code/static
+      - ${LOCAL_DJANGO_MEDIA}:/code/media
+      - ${NGINX_DEFAULT_CONF}:/etc/nginx/conf.d/default.conf
+      - ${NGINX_SSL_CERTS_DIR}:/etc/ssl:ro
+
+  gateway:
+    env_file:
+      - .env
+    image: swagger_server
+    build:
+      context: ./${GATEWAY_REPO}
+      dockerfile: Dockerfile
+    container_name: aerpaw-gateway
+    networks:
+      - portal-net
+    volumes:
+      - ${LOCAL_LOGS}/gateway:/var/log/
+      - ${LOCAL_GATEWAY_DATA}/ssh/id_emulab_rsa:/root/.ssh/id_rsa:ro
+      - ${LOCAL_GATEWAY_DATA}/ssh/config:/root/.ssh/config:ro
+      - ${LOCAL_GATEWAY_DATA}/geni-emulab:/root/.bssw/geni/
+
+  jenkins:
+    image: jenkins-custom:latest
+    build:
+      context: ./${CICD_REPO}/jenkins
+      dockerfile: Dockerfile
+    container_name: aerpaw-jenkins
+    networks:
+      - portal-net
+    ports:
+      - ${JENKINS_INBOUND_AGENT_PORT}:50000
+      - ${JENKINS_INBOUND_CLI_PORT}:50022
+    volumes:
+      - ${LOCAL_JENKINS_DATA}:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - JENKINS_ADMIN_ID=${JENKINS_ADMIN_ID}
+      - JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD}
+      - UID_JENKINS=${UID_JENKINS}
+      - GID_JENKINS=${GID_JENKINS}
+      - JENKINS_OPTS=${JENKINS_OPTS}
+      - CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
+
+  gitea:
+    image: gitea/gitea:1
+    container_name: aerpaw-gitea
+    networks:
+      - portal-net
+    environment:
+      - USER_UID=${GITEA_USER_UID}
+      - USER_GID=${GITEA_USER_GID}
+      - APP_NAME=${GITEA_APP_NAME}
+      - ROOT_URL=${GITEA_ROOT_URL}
+      - DISABLE_REGISTRATION=${GITEA_DISABLE_REGISTRATION}
+      - INSTALL_LOCK=${GITEA_INSTALL_LOCK}
+    volumes:
+      - ${LOCAL_GITEA_DATA}:/data
+      - /etc/localtime:/etc/localtime:ro
+
+networks:
+  portal-net:
+    ipam:
+      driver: default
+      config:
+        - subnet: ${DOCKER_SUBNET}
